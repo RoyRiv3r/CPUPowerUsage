@@ -36,6 +36,7 @@ Tested on AMD Ryzen CPU.
 - Add CPU temp/cores/info
 - Add alerts
 - Custom colors
+- Test different CPU compatibility
 - ...
 
 ## License
