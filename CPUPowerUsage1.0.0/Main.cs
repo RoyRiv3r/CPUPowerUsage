@@ -1,5 +1,4 @@
-﻿using Microsoft.Win32.TaskScheduler;
-using OpenHardwareMonitor.Hardware;
+﻿using OpenHardwareMonitor.Hardware;
 using System;
 using System.Drawing;
 using System.IO;
@@ -7,6 +6,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using System.Threading;
+using Microsoft.Win32;
 
 namespace SystemMonitor
 {
@@ -17,16 +17,13 @@ namespace SystemMonitor
         private readonly NotifyIcon notifyIcon;
         private readonly Computer computer;
         private readonly Font font;
-        private readonly string appPath;
         private readonly string appName;
-        private readonly string taskName;
 
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
         private static extern bool DestroyIcon(IntPtr handle);
 
         public NotificationIcon()
         {
-
             string mutexName = "SystemMonitorAppMutex";
             mutex = new Mutex(true, mutexName, out bool isOnlyInstance);
             if (!isOnlyInstance)
@@ -37,7 +34,6 @@ namespace SystemMonitor
 
             notifyIcon = new NotifyIcon
             {
-                // Load the icon from resources instead of using SystemIcons.Application
                 Icon = new Icon(CPUPowerUsage1._0._0.Properties.Resources.processor_16, 40, 40),
                 Visible = true,
                 ContextMenuStrip = new ContextMenuStrip()
@@ -50,9 +46,7 @@ namespace SystemMonitor
 
             font = new Font("Consolas", 9f, FontStyle.Bold);
 
-            appPath = Assembly.GetExecutingAssembly().Location;
-            appName = Path.GetFileNameWithoutExtension(appPath);
-            taskName = $"{appName}Task";
+            appName = "SystemMonitor";
 
             System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer { Interval = 1500 };
             timer.Tick += OnTimerTick;
@@ -85,8 +79,6 @@ namespace SystemMonitor
             }
             catch (Exception ex)
             {
-                // Log the exception or display an error message
-                // For simplicity, we'll just display a message box
                 MessageBox.Show($"An error occurred while updating hardware: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
 
@@ -111,8 +103,6 @@ namespace SystemMonitor
             }
             catch (Exception ex)
             {
-                // Log the exception or display an error message
-                // For simplicity, we'll just display a message box
                 MessageBox.Show($"An error occurred while updating the icon: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
 
@@ -142,36 +132,54 @@ namespace SystemMonitor
 
         private bool IsStartWithWindows()
         {
-            using (TaskService ts = new TaskService())
+            try
             {
-                return ts.RootFolder.Tasks.Exists(taskName);
+                RegistryKey startupKey = Registry.CurrentUser.OpenSubKey(
+                    "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
+                    true
+                );
+                bool enabled = startupKey.GetValue(appName) != null;
+                startupKey.Close();
+                return enabled;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"An error occurred while checking startup status: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
             }
         }
 
         private void AddStartWithWindows()
         {
-            using (TaskService ts = new TaskService())
+            try
             {
-                TaskDefinition td = ts.NewTask();
-                td.RegistrationInfo.Description = $"Starts {appName} on system startup.";
-                td.Triggers.Add(new LogonTrigger());
-                td.Actions.Add(new ExecAction(appPath));
-                td.Principal.RunLevel = TaskRunLevel.Highest; // Ensure the task runs with admin privileges
-                td.Settings.AllowDemandStart = true;
-                ts.RootFolder.RegisterTaskDefinition(taskName, td);
+                RegistryKey startupKey = Registry.CurrentUser.OpenSubKey(
+                    "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
+                    true
+                );
+                startupKey.SetValue(appName, Application.ExecutablePath);
+                startupKey.Close();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"An error occurred while adding startup: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
-
-
         private void RemoveStartWithWindows()
         {
-            using (TaskService ts = new TaskService())
+            try
             {
-                if (ts.RootFolder.Tasks.Exists(taskName))
-                {
-                    ts.RootFolder.DeleteTask(taskName);
-                }
+                RegistryKey startupKey = Registry.CurrentUser.OpenSubKey(
+                    "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
+                    true
+                );
+                startupKey.DeleteValue(appName, false);
+                startupKey.Close();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"An error occurred while removing startup: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -183,7 +191,6 @@ namespace SystemMonitor
 
         public void Dispose()
         {
-            // Release the Mutex when the application is closing
             if (mutex != null)
             {
                 mutex.ReleaseMutex();
